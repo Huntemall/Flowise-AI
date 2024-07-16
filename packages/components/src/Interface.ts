@@ -1,3 +1,7 @@
+import { BaseMessage } from '@langchain/core/messages'
+import { BufferMemory, BufferWindowMemory, ConversationSummaryMemory, ConversationSummaryBufferMemory } from 'langchain/memory'
+import { Moderation } from '../nodes/moderation/Moderation'
+
 /**
  * Types
  */
@@ -5,6 +9,8 @@
 export type NodeParamsType =
     | 'asyncOptions'
     | 'options'
+    | 'multiOptions'
+    | 'datagrid'
     | 'string'
     | 'number'
     | 'boolean'
@@ -19,12 +25,20 @@ export type CommonType = string | number | boolean | undefined | null
 
 export type MessageType = 'apiMessage' | 'userMessage'
 
+export type ImageDetail = 'auto' | 'low' | 'high'
+
 /**
  * Others
  */
 
 export interface ICommonObject {
     [key: string]: any | CommonType | ICommonObject | CommonType[] | ICommonObject[]
+}
+
+export interface IVariable {
+    name: string
+    value: string
+    type: string
 }
 
 export type IDatabaseEntity = {
@@ -57,8 +71,12 @@ export interface INodeParams {
     type: NodeParamsType | string
     default?: CommonType | ICommonObject | ICommonObject[]
     description?: string
+    warning?: string
     options?: Array<INodeOptionsValue>
+    datagrid?: Array<ICommonObject>
+    credentialNames?: Array<string>
     optional?: boolean | INodeDisplay
+    step?: number
     rows?: number
     list?: boolean
     acceptVariable?: boolean
@@ -66,6 +84,8 @@ export interface INodeParams {
     fileType?: string
     additionalParams?: boolean
     loadMethod?: string
+    hidden?: boolean
+    variables?: ICommonObject[]
 }
 
 export interface INodeExecutionData {
@@ -81,10 +101,14 @@ export interface INodeProperties {
     name: string
     type: string
     icon: string
-    category: string
+    version: number
+    category: string // TODO: use enum instead of string
     baseClasses: string[]
+    tags?: string[]
     description?: string
     filePath?: string
+    badge?: string
+    deprecateMessage?: string
 }
 
 export interface INode extends INodeProperties {
@@ -92,6 +116,11 @@ export interface INode extends INodeProperties {
     output?: INodeOutputsValue[]
     loadMethods?: {
         [key: string]: (nodeData: INodeData, options?: ICommonObject) => Promise<INodeOptionsValue[]>
+    }
+    vectorStoreMethods?: {
+        upsert: (nodeData: INodeData, options?: ICommonObject) => Promise<IndexingResult | void>
+        search: (nodeData: INodeData, options?: ICommonObject) => Promise<any>
+        delete: (nodeData: INodeData, options?: ICommonObject) => Promise<void>
     }
     init?(nodeData: INodeData, input: string, options?: ICommonObject): Promise<any>
     run?(nodeData: INodeData, input: string, options?: ICommonObject): Promise<string | ICommonObject>
@@ -101,8 +130,16 @@ export interface INodeData extends INodeProperties {
     id: string
     inputs?: ICommonObject
     outputs?: ICommonObject
+    credential?: string
     instance?: any
     loadMethod?: string // method to load async options
+}
+
+export interface INodeCredential {
+    label: string
+    name: string
+    description?: string
+    inputs?: INodeParams[]
 }
 
 export interface IMessage {
@@ -110,12 +147,83 @@ export interface IMessage {
     type: MessageType
 }
 
+export interface IUsedTool {
+    tool: string
+    toolInput: object
+    toolOutput: string | object
+}
+
+export interface IMultiAgentNode {
+    node: any
+    name: string
+    label: string
+    type: 'supervisor' | 'worker'
+    llm?: any
+    parentSupervisorName?: string
+    workers?: string[]
+    workerPrompt?: string
+    workerInputVariables?: string[]
+    recursionLimit?: number
+    moderations?: Moderation[]
+    multiModalMessageContent?: MessageContentImageUrl[]
+}
+
+export interface ITeamState {
+    messages: {
+        value: (x: BaseMessage[], y: BaseMessage[]) => BaseMessage[]
+        default: () => BaseMessage[]
+    }
+    team_members: string[]
+    next: string
+    instructions: string
+}
+
+export interface IAgentReasoning {
+    agentName: string
+    messages: string[]
+    next: string
+    instructions: string
+}
+
+export interface IFileUpload {
+    data?: string
+    type: string
+    name: string
+    mime: string
+}
+
+export interface IMultiModalOption {
+    image?: Record<string, any>
+    audio?: Record<string, any>
+}
+
+export type MessageContentText = {
+    type: 'text'
+    text: string
+}
+
+export type MessageContentImageUrl = {
+    type: 'image_url'
+    image_url:
+        | string
+        | {
+              url: string
+              detail?: ImageDetail
+          }
+}
+
+export interface IDocument<Metadata extends Record<string, any> = Record<string, any>> {
+    pageContent: string
+    metadata: Metadata
+}
+
 /**
  * Classes
  */
 
-import { PromptTemplate as LangchainPromptTemplate, PromptTemplateInput } from 'langchain/prompts'
-import { VectorStore } from 'langchain/vectorstores/base'
+import { PromptTemplate as LangchainPromptTemplate, PromptTemplateInput } from '@langchain/core/prompts'
+import { VectorStore } from '@langchain/core/vectorstores'
+import { Document } from '@langchain/core/documents'
 
 export class PromptTemplate extends LangchainPromptTemplate {
     promptValues: ICommonObject
@@ -162,4 +270,77 @@ export class VectorStoreRetriever {
         this.description = fields.description
         this.vectorStore = fields.vectorStore
     }
+}
+
+/**
+ * Implement abstract classes and interface for memory
+ */
+
+export interface MemoryMethods {
+    getChatMessages(
+        overrideSessionId?: string,
+        returnBaseMessages?: boolean,
+        prependMessages?: IMessage[]
+    ): Promise<IMessage[] | BaseMessage[]>
+    addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId?: string): Promise<void>
+    clearChatMessages(overrideSessionId?: string): Promise<void>
+}
+
+export abstract class FlowiseMemory extends BufferMemory implements MemoryMethods {
+    abstract getChatMessages(
+        overrideSessionId?: string,
+        returnBaseMessages?: boolean,
+        prependMessages?: IMessage[]
+    ): Promise<IMessage[] | BaseMessage[]>
+    abstract addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId?: string): Promise<void>
+    abstract clearChatMessages(overrideSessionId?: string): Promise<void>
+}
+
+export abstract class FlowiseWindowMemory extends BufferWindowMemory implements MemoryMethods {
+    abstract getChatMessages(
+        overrideSessionId?: string,
+        returnBaseMessages?: boolean,
+        prependMessages?: IMessage[]
+    ): Promise<IMessage[] | BaseMessage[]>
+    abstract addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId?: string): Promise<void>
+    abstract clearChatMessages(overrideSessionId?: string): Promise<void>
+}
+
+export abstract class FlowiseSummaryMemory extends ConversationSummaryMemory implements MemoryMethods {
+    abstract getChatMessages(
+        overrideSessionId?: string,
+        returnBaseMessages?: boolean,
+        prependMessages?: IMessage[]
+    ): Promise<IMessage[] | BaseMessage[]>
+    abstract addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId?: string): Promise<void>
+    abstract clearChatMessages(overrideSessionId?: string): Promise<void>
+}
+
+export abstract class FlowiseSummaryBufferMemory extends ConversationSummaryBufferMemory implements MemoryMethods {
+    abstract getChatMessages(
+        overrideSessionId?: string,
+        returnBaseMessages?: boolean,
+        prependMessages?: IMessage[]
+    ): Promise<IMessage[] | BaseMessage[]>
+    abstract addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId?: string): Promise<void>
+    abstract clearChatMessages(overrideSessionId?: string): Promise<void>
+}
+
+export type IndexingResult = {
+    numAdded: number
+    numDeleted: number
+    numUpdated: number
+    numSkipped: number
+    totalKeys: number
+    addedDocs: Document[]
+}
+
+export interface IVisionChatModal {
+    id: string
+    configuredModel: string
+    multiModalOption: IMultiModalOption
+    configuredMaxToken?: number
+    setVisionModel(): void
+    revertToOriginalModel(): void
+    setMultiModalOption(multiModalOption: IMultiModalOption): void
 }

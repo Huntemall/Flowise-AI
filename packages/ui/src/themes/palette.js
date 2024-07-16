@@ -6,6 +6,7 @@
 export default function themePalette(theme) {
     return {
         mode: theme?.customization?.navType,
+        transparent: theme.colors?.transparent,
         common: {
             black: theme.colors?.darkPaper,
             dark: theme.colors?.darkPrimaryMain
@@ -33,6 +34,11 @@ export default function themePalette(theme) {
             light: theme.colors?.orangeLight,
             main: theme.colors?.orangeMain,
             dark: theme.colors?.orangeDark
+        },
+        teal: {
+            light: theme.colors?.tealLight,
+            main: theme.colors?.tealMain,
+            dark: theme.colors?.tealDark
         },
         warning: {
             light: theme.colors?.warningLight,
@@ -80,6 +86,9 @@ export default function themePalette(theme) {
         asyncSelect: {
             main: theme.customization.isDarkMode ? theme.colors?.darkPrimary800 : theme.colors?.grey50
         },
+        timeMessage: {
+            main: theme.customization.isDarkMode ? theme.colors?.darkLevel2 : theme.colors?.grey200
+        },
         canvasHeader: {
             deployLight: theme.colors?.primaryLight,
             deployDark: theme.colors?.primaryDark,
@@ -90,6 +99,10 @@ export default function themePalette(theme) {
         },
         codeEditor: {
             main: theme.customization.isDarkMode ? theme.colors?.darkPrimary800 : theme.colors?.primaryLight
+        },
+        nodeToolTip: {
+            background: theme.customization.isDarkMode ? theme.colors?.darkPrimary800 : theme.colors?.paper,
+            color: theme.customization.isDarkMode ? theme.colors?.paper : 'rgba(0, 0, 0, 0.87)'
         }
     }
 }

@@ -9,6 +9,7 @@ import {
 class CodeTextSplitter_TextSplitters implements INode {
     label: string
     name: string
+    version: number
     description: string
     type: string
     icon: string
@@ -18,6 +19,7 @@ class CodeTextSplitter_TextSplitters implements INode {
     constructor() {
         this.label = 'Code Text Splitter'
         this.name = 'codeTextSplitter'
+        this.version = 1.0
         this.type = 'CodeTextSplitter'
         this.icon = 'codeTextSplitter.svg'
         this.category = 'Text Splitters'
@@ -99,6 +101,7 @@ class CodeTextSplitter_TextSplitters implements INode {
                 label: 'Chunk Size',
                 name: 'chunkSize',
                 type: 'number',
+                description: 'Number of characters in each chunk. Default is 1000.',
                 default: 1000,
                 optional: true
             },
@@ -106,6 +109,8 @@ class CodeTextSplitter_TextSplitters implements INode {
                 label: 'Chunk Overlap',
                 name: 'chunkOverlap',
                 type: 'number',
+                description: 'Number of characters to overlap between chunks. Default is 200.',
+                default: 200,
                 optional: true
             }
         ]

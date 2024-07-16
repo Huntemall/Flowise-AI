@@ -1,12 +1,13 @@
-import { BaseLanguageModel } from 'langchain/base_language'
+import { BaseLanguageModel } from '@langchain/core/language_models/base'
+import { Embeddings } from '@langchain/core/embeddings'
+import { WebBrowser } from 'langchain/tools/webbrowser'
 import { INode, INodeData, INodeParams } from '../../../src/Interface'
 import { getBaseClasses } from '../../../src/utils'
-import { WebBrowser } from 'langchain/tools/webbrowser'
-import { Embeddings } from 'langchain/embeddings/base'
 
 class WebBrowser_Tools implements INode {
     label: string
     name: string
+    version: number
     description: string
     type: string
     icon: string
@@ -17,6 +18,7 @@ class WebBrowser_Tools implements INode {
     constructor() {
         this.label = 'Web Browser'
         this.name = 'webBrowser'
+        this.version = 1.0
         this.type = 'WebBrowser'
         this.icon = 'webBrowser.svg'
         this.category = 'Tools'

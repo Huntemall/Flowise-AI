@@ -39,8 +39,23 @@ export const initNode = (nodeData, newNodeId) => {
     const incoming = nodeData.inputs ? nodeData.inputs.length : 0
     const outgoing = 1
 
-    const whitelistTypes = ['asyncOptions', 'options', 'string', 'number', 'boolean', 'password', 'json', 'code', 'date', 'file', 'folder']
+    const whitelistTypes = [
+        'asyncOptions',
+        'options',
+        'multiOptions',
+        'datagrid',
+        'string',
+        'number',
+        'boolean',
+        'password',
+        'json',
+        'code',
+        'date',
+        'file',
+        'folder'
+    ]
 
+    // Inputs
     for (let i = 0; i < incoming; i += 1) {
         const newInput = {
             ...nodeData.inputs[i],
@@ -53,6 +68,16 @@ export const initNode = (nodeData, newNodeId) => {
         }
     }
 
+    // Credential
+    if (nodeData.credential) {
+        const newInput = {
+            ...nodeData.credential,
+            id: `${newNodeId}-input-${nodeData.credential.name}-${nodeData.credential.type}`
+        }
+        inputParams.unshift(newInput)
+    }
+
+    // Outputs
     const outputAnchors = []
     for (let i = 0; i < outgoing; i += 1) {
         if (nodeData.outputs && nodeData.outputs.length) {
@@ -74,6 +99,7 @@ export const initNode = (nodeData, newNodeId) => {
                     id: `${newNodeId}-output-${nodeData.outputs[j].name}-${baseClasses}`,
                     name: nodeData.outputs[j].name,
                     label: nodeData.outputs[j].label,
+                    description: nodeData.outputs[j].description ?? '',
                     type
                 }
                 options.push(newOutputOption)
@@ -82,6 +108,7 @@ export const initNode = (nodeData, newNodeId) => {
                 name: 'output',
                 label: 'Output',
                 type: 'options',
+                description: nodeData.outputs[0].description ?? '',
                 options,
                 default: nodeData.outputs[0].name
             }
@@ -91,6 +118,7 @@ export const initNode = (nodeData, newNodeId) => {
                 id: `${newNodeId}-output-${nodeData.name}-${nodeData.baseClasses.join('|')}`,
                 name: nodeData.name,
                 label: nodeData.type,
+                description: nodeData.description ?? '',
                 type: nodeData.baseClasses.join(' | ')
             }
             outputAnchors.push(newOutput)
@@ -129,6 +157,8 @@ export const initNode = (nodeData, newNodeId) => {
             }
         ]
     */
+
+    // Inputs
     if (nodeData.inputs) {
         nodeData.inputAnchors = inputAnchors
         nodeData.inputParams = inputParams
@@ -139,25 +169,86 @@ export const initNode = (nodeData, newNodeId) => {
         nodeData.inputs = {}
     }
 
+    // Outputs
     if (nodeData.outputs) {
         nodeData.outputs = initializeDefaultNodeData(outputAnchors)
     } else {
         nodeData.outputs = {}
     }
-
     nodeData.outputAnchors = outputAnchors
+
+    // Credential
+    if (nodeData.credential) nodeData.credential = ''
+
     nodeData.id = newNodeId
 
     return nodeData
 }
 
-export const getEdgeLabelName = (source) => {
-    const sourceSplit = source.split('-')
-    if (sourceSplit.length && sourceSplit[0].includes('ifElse')) {
-        const outputAnchorsIndex = sourceSplit[sourceSplit.length - 1]
-        return outputAnchorsIndex === '0' ? 'true' : 'false'
+export const updateOutdatedNodeData = (newComponentNodeData, existingComponentNodeData) => {
+    const initNewComponentNodeData = initNode(newComponentNodeData, existingComponentNodeData.id)
+
+    // Update credentials with existing credentials
+    if (existingComponentNodeData.credential) {
+        initNewComponentNodeData.credential = existingComponentNodeData.credential
     }
-    return ''
+
+    // Update inputs with existing inputs
+    if (existingComponentNodeData.inputs) {
+        for (const key in existingComponentNodeData.inputs) {
+            if (key in initNewComponentNodeData.inputs) {
+                initNewComponentNodeData.inputs[key] = existingComponentNodeData.inputs[key]
+            }
+        }
+    }
+
+    // Update outputs with existing outputs
+    if (existingComponentNodeData.outputs) {
+        for (const key in existingComponentNodeData.outputs) {
+            if (key in initNewComponentNodeData.outputs) {
+                initNewComponentNodeData.outputs[key] = existingComponentNodeData.outputs[key]
+            }
+        }
+    }
+
+    return initNewComponentNodeData
+}
+
+export const updateOutdatedNodeEdge = (newComponentNodeData, edges) => {
+    const removedEdges = []
+    for (const edge of edges) {
+        const targetNodeId = edge.targetHandle.split('-')[0]
+        const sourceNodeId = edge.sourceHandle.split('-')[0]
+
+        if (targetNodeId === newComponentNodeData.id) {
+            // Check if targetHandle is in inputParams or inputAnchors
+            const inputParam = newComponentNodeData.inputParams.find((param) => param.id === edge.targetHandle)
+            const inputAnchor = newComponentNodeData.inputAnchors.find((param) => param.id === edge.targetHandle)
+
+            if (!inputParam && !inputAnchor) {
+                removedEdges.push(edge)
+            }
+        }
+
+        if (sourceNodeId === newComponentNodeData.id) {
+            if (newComponentNodeData.outputAnchors?.length) {
+                for (const outputAnchor of newComponentNodeData.outputAnchors) {
+                    const outputAnchorType = outputAnchor.type
+                    if (outputAnchorType === 'options') {
+                        if (!outputAnchor.options.find((outputOption) => outputOption.id === edge.sourceHandle)) {
+                            removedEdges.push(edge)
+                        }
+                    } else {
+                        if (outputAnchor.id !== edge.sourceHandle) {
+                            removedEdges.push(edge)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return removedEdges
 }
 
 export const isValidConnection = (connection, reactFlowInstance) => {
@@ -168,8 +259,10 @@ export const isValidConnection = (connection, reactFlowInstance) => {
     //sourceHandle: "llmChain_0-output-llmChain-BaseChain"
     //targetHandle: "mrlkAgentLLM_0-input-model-BaseLanguageModel"
 
-    const sourceTypes = sourceHandle.split('-')[sourceHandle.split('-').length - 1].split('|')
-    const targetTypes = targetHandle.split('-')[targetHandle.split('-').length - 1].split('|')
+    let sourceTypes = sourceHandle.split('-')[sourceHandle.split('-').length - 1].split('|')
+    sourceTypes = sourceTypes.map((s) => s.trim())
+    let targetTypes = targetHandle.split('-')[targetHandle.split('-').length - 1].split('|')
+    targetTypes = targetTypes.map((t) => t.trim())
 
     if (targetTypes.some((t) => sourceTypes.includes(t))) {
         let targetNode = reactFlowInstance.getNode(target)
@@ -207,6 +300,15 @@ export const convertDateStringToDateObject = (dateString) => {
 
 export const getFileName = (fileBase64) => {
     let fileNames = []
+    if (fileBase64.startsWith('FILE-STORAGE::')) {
+        const names = fileBase64.substring(14)
+        if (names.includes('[') && names.includes(']')) {
+            const files = JSON.parse(names)
+            return files.join(', ')
+        } else {
+            return fileBase64.substring(14)
+        }
+    }
     if (fileBase64.startsWith('[') && fileBase64.endsWith(']')) {
         const files = JSON.parse(fileBase64)
         for (const file of files) {
@@ -238,6 +340,18 @@ export const getFolderName = (base64ArrayStr) => {
     }
 }
 
+export const sanitizeChatflows = (arrayChatflows) => {
+    const sanitizedChatflows = arrayChatflows.map((chatFlow) => {
+        const sanitizeFlowData = generateExportFlowData(JSON.parse(chatFlow.flowData))
+        return {
+            id: chatFlow.id,
+            name: chatFlow.name,
+            flowData: JSON.stringify(sanitizeFlowData, null, 2)
+        }
+    })
+    return sanitizedChatflows
+}
+
 export const generateExportFlowData = (flowData) => {
     const nodes = flowData.nodes
     const edges = flowData.edges
@@ -249,9 +363,11 @@ export const generateExportFlowData = (flowData) => {
         const newNodeData = {
             id: node.data.id,
             label: node.data.label,
+            version: node.data.version,
             name: node.data.name,
             type: node.data.type,
             baseClasses: node.data.baseClasses,
+            tags: node.data.tags,
             category: node.data.category,
             description: node.data.description,
             inputParams: node.data.inputParams,
@@ -296,6 +412,62 @@ export const getAvailableNodesForVariable = (nodes, edges, target, targetHandle)
         }
     }
     return parentNodes
+}
+
+export const getUpsertDetails = (nodes, edges) => {
+    const vsNodes = nodes.filter(
+        (node) =>
+            node.data.category === 'Vector Stores' && !node.data.label.includes('Upsert') && !node.data.label.includes('Load Existing')
+    )
+    const vsNodeIds = vsNodes.map((vs) => vs.data.id)
+
+    const upsertNodes = []
+    const seenVsNodeIds = []
+    for (const edge of edges) {
+        if (vsNodeIds.includes(edge.source) || vsNodeIds.includes(edge.target)) {
+            const vsNode = vsNodes.find((node) => node.data.id === edge.source || node.data.id === edge.target)
+            if (!vsNode || seenVsNodeIds.includes(vsNode.data.id)) continue
+            seenVsNodeIds.push(vsNode.data.id)
+
+            // Found Vector Store Node, proceed to find connected Document Loader node
+            let connectedDocs = []
+
+            if (vsNode.data.inputs.document) connectedDocs = [...new Set(vsNode.data.inputs.document)]
+
+            if (connectedDocs.length) {
+                const innerNodes = [vsNode]
+
+                if (vsNode.data.inputs.embeddings) {
+                    const embeddingsId = vsNode.data.inputs.embeddings.replace(/{{|}}/g, '').split('.')[0]
+                    innerNodes.push(nodes.find((node) => node.data.id === embeddingsId))
+                }
+
+                if (vsNode.data.inputs.recordManager) {
+                    const recordManagerId = vsNode.data.inputs.recordManager.replace(/{{|}}/g, '').split('.')[0]
+                    innerNodes.push(nodes.find((node) => node.data.id === recordManagerId))
+                }
+
+                for (const doc of connectedDocs) {
+                    const docId = doc.replace(/{{|}}/g, '').split('.')[0]
+                    const docNode = nodes.find((node) => node.data.id === docId)
+                    if (docNode) innerNodes.push(docNode)
+
+                    // Found Document Loader Node, proceed to find connected Text Splitter node
+                    if (docNode && docNode.data.inputs.textSplitter) {
+                        const textSplitterId = docNode.data.inputs.textSplitter.replace(/{{|}}/g, '').split('.')[0]
+                        const textSplitterNode = nodes.find((node) => node.data.id === textSplitterId)
+                        if (textSplitterNode) innerNodes.push(textSplitterNode)
+                    }
+                }
+
+                upsertNodes.push({
+                    vectorNode: vsNode,
+                    nodes: innerNodes.reverse()
+                })
+            }
+        }
+    }
+    return upsertNodes
 }
 
 export const rearrangeToolsOrdering = (newValues, sourceNodeId) => {
@@ -380,4 +552,234 @@ export const getInputVariables = (paramValue) => {
         startIdx += 1
     }
     return inputVariables
+}
+
+export const removeDuplicateURL = (message) => {
+    const visitedURLs = []
+    const newSourceDocuments = []
+
+    if (!message.sourceDocuments) return newSourceDocuments
+
+    message.sourceDocuments.forEach((source) => {
+        if (source && source.metadata && source.metadata.source) {
+            if (isValidURL(source.metadata.source) && !visitedURLs.includes(source.metadata.source)) {
+                visitedURLs.push(source.metadata.source)
+                newSourceDocuments.push(source)
+            } else if (!isValidURL(source.metadata.source)) {
+                newSourceDocuments.push(source)
+            }
+        } else if (source) {
+            newSourceDocuments.push(source)
+        }
+    })
+    return newSourceDocuments
+}
+
+export const isValidURL = (url) => {
+    try {
+        return new URL(url)
+    } catch (err) {
+        return undefined
+    }
+}
+
+export const formatDataGridRows = (rows) => {
+    try {
+        const parsedRows = typeof rows === 'string' ? JSON.parse(rows) : rows
+        return parsedRows.map((sch, index) => {
+            return {
+                ...sch,
+                id: index
+            }
+        })
+    } catch (e) {
+        return []
+    }
+}
+
+export const setLocalStorageChatflow = (chatflowid, chatId, saveObj = {}) => {
+    const chatDetails = localStorage.getItem(`${chatflowid}_INTERNAL`)
+    const obj = { ...saveObj }
+    if (chatId) obj.chatId = chatId
+
+    if (!chatDetails) {
+        localStorage.setItem(`${chatflowid}_INTERNAL`, JSON.stringify(obj))
+    } else {
+        try {
+            const parsedChatDetails = JSON.parse(chatDetails)
+            localStorage.setItem(`${chatflowid}_INTERNAL`, JSON.stringify({ ...parsedChatDetails, ...obj }))
+        } catch (e) {
+            const chatId = chatDetails
+            obj.chatId = chatId
+            localStorage.setItem(`${chatflowid}_INTERNAL`, JSON.stringify(obj))
+        }
+    }
+}
+
+export const getLocalStorageChatflow = (chatflowid) => {
+    const chatDetails = localStorage.getItem(`${chatflowid}_INTERNAL`)
+    if (!chatDetails) return {}
+    try {
+        return JSON.parse(chatDetails)
+    } catch (e) {
+        return {}
+    }
+}
+
+export const removeLocalStorageChatHistory = (chatflowid) => {
+    const chatDetails = localStorage.getItem(`${chatflowid}_INTERNAL`)
+    if (!chatDetails) return
+    try {
+        const parsedChatDetails = JSON.parse(chatDetails)
+        if (parsedChatDetails.lead) {
+            // Dont remove lead when chat is cleared
+            const obj = { lead: parsedChatDetails.lead }
+            localStorage.removeItem(`${chatflowid}_INTERNAL`)
+            localStorage.setItem(`${chatflowid}_INTERNAL`, JSON.stringify(obj))
+        } else {
+            localStorage.removeItem(`${chatflowid}_INTERNAL`)
+        }
+    } catch (e) {
+        return
+    }
+}
+
+export const unshiftFiles = (configData) => {
+    const filesConfig = configData.find((config) => config.name === 'files')
+    if (filesConfig) {
+        configData = configData.filter((config) => config.name !== 'files')
+        configData.unshift(filesConfig)
+    }
+    return configData
+}
+
+export const getConfigExamplesForJS = (configData, bodyType, isMultiple, stopNodeId) => {
+    let finalStr = ''
+    configData = unshiftFiles(configData)
+    const loop = Math.min(configData.length, 4)
+    for (let i = 0; i < loop; i += 1) {
+        const config = configData[i]
+        let exampleVal = `"example"`
+        if (config.type === 'string') exampleVal = `"example"`
+        else if (config.type === 'boolean') exampleVal = `true`
+        else if (config.type === 'number') exampleVal = `1`
+        else if (config.type === 'json') exampleVal = `{ "key": "val" }`
+        else if (config.name === 'files') exampleVal = `input.files[0]`
+        finalStr += bodyType === 'json' ? `\n      "${config.name}": ${exampleVal},` : `formData.append("${config.name}", ${exampleVal})\n`
+        if (i === loop - 1 && bodyType !== 'json')
+            finalStr += !isMultiple
+                ? ``
+                : stopNodeId
+                ? `formData.append("stopNodeId", "${stopNodeId}")\n`
+                : `formData.append("question", "Hey, how are you?")\n`
+    }
+    return finalStr
+}
+
+export const getConfigExamplesForPython = (configData, bodyType, isMultiple, stopNodeId) => {
+    let finalStr = ''
+    configData = unshiftFiles(configData)
+    const loop = Math.min(configData.length, 4)
+    for (let i = 0; i < loop; i += 1) {
+        const config = configData[i]
+        let exampleVal = `"example"`
+        if (config.type === 'string') exampleVal = `"example"`
+        else if (config.type === 'boolean') exampleVal = `true`
+        else if (config.type === 'number') exampleVal = `1`
+        else if (config.type === 'json') exampleVal = `{ "key": "val" }`
+        else if (config.name === 'files') continue
+        finalStr += bodyType === 'json' ? `\n        "${config.name}": ${exampleVal},` : `\n    "${config.name}": ${exampleVal},`
+        if (i === loop - 1 && bodyType !== 'json')
+            finalStr += !isMultiple
+                ? `\n`
+                : stopNodeId
+                ? `\n    "stopNodeId": "${stopNodeId}"\n`
+                : `\n    "question": "Hey, how are you?"\n`
+    }
+    return finalStr
+}
+
+export const getConfigExamplesForCurl = (configData, bodyType, isMultiple, stopNodeId) => {
+    let finalStr = ''
+    configData = unshiftFiles(configData)
+    const loop = Math.min(configData.length, 4)
+    for (let i = 0; i < loop; i += 1) {
+        const config = configData[i]
+        let exampleVal = `"example"`
+        if (config.type === 'string') exampleVal = bodyType === 'json' ? `"example"` : `example`
+        else if (config.type === 'boolean') exampleVal = `true`
+        else if (config.type === 'number') exampleVal = `1`
+        else if (config.type === 'json') exampleVal = `{key:val}`
+        else if (config.name === 'files')
+            exampleVal = `@/home/user1/Desktop/example${config.type.includes(',') ? config.type.split(',')[0] : config.type}`
+        finalStr += bodyType === 'json' ? `"${config.name}": ${exampleVal}` : `\n     -F "${config.name}=${exampleVal}"`
+        if (i === loop - 1)
+            finalStr +=
+                bodyType === 'json'
+                    ? ` }`
+                    : !isMultiple
+                    ? ``
+                    : stopNodeId
+                    ? ` \\\n     -F "stopNodeId=${stopNodeId}"`
+                    : ` \\\n     -F "question=Hey, how are you?"`
+        else finalStr += bodyType === 'json' ? `, ` : ` \\`
+    }
+    return finalStr
+}
+
+export const getOS = () => {
+    let userAgent = window.navigator.userAgent.toLowerCase(),
+        macosPlatforms = /(macintosh|macintel|macppc|mac68k|macos)/i,
+        windowsPlatforms = /(win32|win64|windows|wince)/i,
+        iosPlatforms = /(iphone|ipad|ipod)/i,
+        os = null
+
+    if (macosPlatforms.test(userAgent)) {
+        os = 'macos'
+    } else if (iosPlatforms.test(userAgent)) {
+        os = 'ios'
+    } else if (windowsPlatforms.test(userAgent)) {
+        os = 'windows'
+    } else if (/android/.test(userAgent)) {
+        os = 'android'
+    } else if (!os && /linux/.test(userAgent)) {
+        os = 'linux'
+    }
+
+    return os
+}
+
+export const formatBytes = (number) => {
+    if (number == null || number === undefined || number <= 0) {
+        return '0 Bytes'
+    }
+    var scaleCounter = 0
+    var scaleInitials = [' Bytes', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB']
+    while (number >= 1024 && scaleCounter < scaleInitials.length - 1) {
+        number /= 1024
+        scaleCounter++
+    }
+    if (scaleCounter >= scaleInitials.length) scaleCounter = scaleInitials.length - 1
+    let compactNumber = number
+        .toFixed(2)
+        .replace(/\.?0+$/, '')
+        .replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    compactNumber += scaleInitials[scaleCounter]
+    return compactNumber.trim()
+}
+
+// Formatter from: https://stackoverflow.com/a/9462382
+export const kFormatter = (num) => {
+    const lookup = [
+        { value: 1, symbol: '' },
+        { value: 1e3, symbol: 'k' },
+        { value: 1e6, symbol: 'M' },
+        { value: 1e9, symbol: 'G' },
+        { value: 1e12, symbol: 'T' },
+        { value: 1e15, symbol: 'P' },
+        { value: 1e18, symbol: 'E' }
+    ]
+    const regexp = /\.0+$|(?<=\.[0-9]*[1-9])0+$/
+    const item = lookup.findLast((item) => num >= item.value)
+    return item ? (num / item.value).toFixed(1).replace(regexp, '').concat(item.symbol) : '0'
 }

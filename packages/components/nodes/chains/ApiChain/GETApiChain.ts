@@ -1,8 +1,9 @@
-import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
+import { BaseLanguageModel } from '@langchain/core/language_models/base'
+import { PromptTemplate } from '@langchain/core/prompts'
 import { APIChain } from 'langchain/chains'
-import { CustomChainHandler, getBaseClasses } from '../../../src/utils'
-import { BaseLanguageModel } from 'langchain/base_language'
-import { PromptTemplate } from 'langchain/prompts'
+import { getBaseClasses } from '../../../src/utils'
+import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
+import { ConsoleCallbackHandler, CustomChainHandler, additionalCallbacks } from '../../../src/handler'
 
 export const API_URL_RAW_PROMPT_TEMPLATE = `You are given the below API Documentation:
 {api_docs}
@@ -18,6 +19,7 @@ export const API_RESPONSE_RAW_PROMPT_TEMPLATE =
 class GETApiChain_Chains implements INode {
     label: string
     name: string
+    version: number
     type: string
     icon: string
     category: string
@@ -28,8 +30,9 @@ class GETApiChain_Chains implements INode {
     constructor() {
         this.label = 'GET API Chain'
         this.name = 'getApiChain'
+        this.version = 1.0
         this.type = 'GETApiChain'
-        this.icon = 'apichain.svg'
+        this.icon = 'get.svg'
         this.category = 'Chains'
         this.description = 'Chain to run queries against GET API'
         this.baseClasses = [this.type, ...getBaseClasses(APIChain)]
@@ -44,7 +47,7 @@ class GETApiChain_Chains implements INode {
                 name: 'apiDocs',
                 type: 'string',
                 description:
-                    'Description of how API works. Please refer to more <a target="_blank" href="https://github.com/hwchase17/langchain/blob/master/langchain/chains/api/open_meteo_docs.py">examples</a>',
+                    'Description of how API works. Please refer to more <a target="_blank" href="https://github.com/langchain-ai/langchain/blob/master/libs/langchain/langchain/chains/api/open_meteo_docs.py">examples</a>',
                 rows: 4
             },
             {
@@ -95,12 +98,15 @@ class GETApiChain_Chains implements INode {
         const ansPrompt = nodeData.inputs?.ansPrompt as string
 
         const chain = await getAPIChain(apiDocs, model, headers, urlPrompt, ansPrompt)
+        const loggerHandler = new ConsoleCallbackHandler(options.logger)
+        const callbacks = await additionalCallbacks(nodeData, options)
+
         if (options.socketIO && options.socketIOClientId) {
             const handler = new CustomChainHandler(options.socketIO, options.socketIOClientId, 2)
-            const res = await chain.run(input, [handler])
+            const res = await chain.run(input, [loggerHandler, handler, ...callbacks])
             return res
         } else {
-            const res = await chain.run(input)
+            const res = await chain.run(input, [loggerHandler, ...callbacks])
             return res
         }
     }

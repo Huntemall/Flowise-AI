@@ -1,9 +1,10 @@
-import { VectorStore } from 'langchain/vectorstores/base'
+import { VectorStore } from '@langchain/core/vectorstores'
 import { INode, INodeData, INodeParams, VectorStoreRetriever, VectorStoreRetrieverInput } from '../../../src/Interface'
 
 class VectorStoreRetriever_Retrievers implements INode {
     label: string
     name: string
+    version: number
     description: string
     type: string
     icon: string
@@ -14,6 +15,7 @@ class VectorStoreRetriever_Retrievers implements INode {
     constructor() {
         this.label = 'Vector Store Retriever'
         this.name = 'vectorStoreRetriever'
+        this.version = 1.0
         this.type = 'VectorStoreRetriever'
         this.icon = 'vectorretriever.svg'
         this.category = 'Retrievers'

@@ -1,12 +1,12 @@
 import { INode, INodeData, INodeParams } from '../../../src/Interface'
 import { getBaseClasses, getInputVariables } from '../../../src/utils'
-import { FewShotPromptTemplate, FewShotPromptTemplateInput, PromptTemplate } from 'langchain/prompts'
-import { Example } from 'langchain/schema'
-import { TemplateFormat } from 'langchain/dist/prompts/template'
+import { FewShotPromptTemplate, FewShotPromptTemplateInput, PromptTemplate, TemplateFormat } from '@langchain/core/prompts'
+import type { Example } from '@langchain/core/prompts'
 
 class FewShotPromptTemplate_Prompts implements INode {
     label: string
     name: string
+    version: number
     description: string
     type: string
     icon: string
@@ -17,6 +17,7 @@ class FewShotPromptTemplate_Prompts implements INode {
     constructor() {
         this.label = 'Few Shot Prompt Template'
         this.name = 'fewShotPromptTemplate'
+        this.version = 1.0
         this.type = 'FewShotPromptTemplate'
         this.icon = 'prompt.svg'
         this.category = 'Prompts'
@@ -53,7 +54,7 @@ class FewShotPromptTemplate_Prompts implements INode {
                 placeholder: `Word: {input}\nAntonym:`
             },
             {
-                label: 'Example Seperator',
+                label: 'Example Separator',
                 name: 'exampleSeparator',
                 type: 'string',
                 placeholder: `\n\n`
@@ -78,7 +79,7 @@ class FewShotPromptTemplate_Prompts implements INode {
     }
 
     async init(nodeData: INodeData): Promise<any> {
-        const examplesStr = nodeData.inputs?.examples as string
+        const examplesStr = nodeData.inputs?.examples
         const prefix = nodeData.inputs?.prefix as string
         const suffix = nodeData.inputs?.suffix as string
         const exampleSeparator = nodeData.inputs?.exampleSeparator as string
@@ -86,7 +87,15 @@ class FewShotPromptTemplate_Prompts implements INode {
         const examplePrompt = nodeData.inputs?.examplePrompt as PromptTemplate
 
         const inputVariables = getInputVariables(suffix)
-        const examples: Example[] = JSON.parse(examplesStr.replace(/\s/g, ''))
+
+        let examples: Example[] = []
+        if (examplesStr) {
+            try {
+                examples = typeof examplesStr === 'object' ? examplesStr : JSON.parse(examplesStr)
+            } catch (exception) {
+                throw new Error("Invalid JSON in the FewShotPromptTemplate's examples: " + exception)
+            }
+        }
 
         try {
             const obj: FewShotPromptTemplateInput = {

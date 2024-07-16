@@ -1,7 +1,11 @@
 import client from './client'
 
-const getAllMarketplaces = () => client.get('/marketplaces')
+const getAllChatflowsMarketplaces = () => client.get('/marketplaces/chatflows')
+const getAllToolsMarketplaces = () => client.get('/marketplaces/tools')
+const getAllTemplatesFromMarketplaces = () => client.get('/marketplaces/templates')
 
 export default {
-    getAllMarketplaces
+    getAllChatflowsMarketplaces,
+    getAllToolsMarketplaces,
+    getAllTemplatesFromMarketplaces
 }

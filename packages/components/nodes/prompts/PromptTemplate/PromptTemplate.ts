@@ -1,10 +1,11 @@
 import { ICommonObject, INode, INodeData, INodeParams, PromptTemplate } from '../../../src/Interface'
 import { getBaseClasses, getInputVariables } from '../../../src/utils'
-import { PromptTemplateInput } from 'langchain/prompts'
+import { PromptTemplateInput } from '@langchain/core/prompts'
 
 class PromptTemplate_Prompts implements INode {
     label: string
     name: string
+    version: number
     description: string
     type: string
     icon: string
@@ -15,6 +16,7 @@ class PromptTemplate_Prompts implements INode {
     constructor() {
         this.label = 'Prompt Template'
         this.name = 'promptTemplate'
+        this.version = 1.0
         this.type = 'PromptTemplate'
         this.icon = 'prompt.svg'
         this.category = 'Prompts'
@@ -41,11 +43,15 @@ class PromptTemplate_Prompts implements INode {
 
     async init(nodeData: INodeData): Promise<any> {
         const template = nodeData.inputs?.template as string
-        const promptValuesStr = nodeData.inputs?.promptValues as string
+        const promptValuesStr = nodeData.inputs?.promptValues
 
         let promptValues: ICommonObject = {}
         if (promptValuesStr) {
-            promptValues = JSON.parse(promptValuesStr.replace(/\s/g, ''))
+            try {
+                promptValues = typeof promptValuesStr === 'object' ? promptValuesStr : JSON.parse(promptValuesStr)
+            } catch (exception) {
+                throw new Error("Invalid JSON in the PromptTemplate's promptValues: " + exception)
+            }
         }
 
         const inputVariables = getInputVariables(template)

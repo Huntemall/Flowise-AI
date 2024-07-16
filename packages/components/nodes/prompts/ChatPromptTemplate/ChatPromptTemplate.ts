@@ -1,10 +1,11 @@
 import { ICommonObject, INode, INodeData, INodeParams } from '../../../src/Interface'
 import { getBaseClasses } from '../../../src/utils'
-import { ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate } from 'langchain/prompts'
+import { ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate } from '@langchain/core/prompts'
 
 class ChatPromptTemplate_Prompts implements INode {
     label: string
     name: string
+    version: number
     description: string
     type: string
     icon: string
@@ -15,6 +16,7 @@ class ChatPromptTemplate_Prompts implements INode {
     constructor() {
         this.label = 'Chat Prompt Template'
         this.name = 'chatPromptTemplate'
+        this.version = 1.0
         this.type = 'ChatPromptTemplate'
         this.icon = 'prompt.svg'
         this.category = 'Prompts'
@@ -49,16 +51,20 @@ class ChatPromptTemplate_Prompts implements INode {
     async init(nodeData: INodeData): Promise<any> {
         const systemMessagePrompt = nodeData.inputs?.systemMessagePrompt as string
         const humanMessagePrompt = nodeData.inputs?.humanMessagePrompt as string
-        const promptValuesStr = nodeData.inputs?.promptValues as string
+        const promptValuesStr = nodeData.inputs?.promptValues
 
-        const prompt = ChatPromptTemplate.fromPromptMessages([
+        const prompt = ChatPromptTemplate.fromMessages([
             SystemMessagePromptTemplate.fromTemplate(systemMessagePrompt),
             HumanMessagePromptTemplate.fromTemplate(humanMessagePrompt)
         ])
 
         let promptValues: ICommonObject = {}
         if (promptValuesStr) {
-            promptValues = JSON.parse(promptValuesStr.replace(/\s/g, ''))
+            try {
+                promptValues = typeof promptValuesStr === 'object' ? promptValuesStr : JSON.parse(promptValuesStr)
+            } catch (exception) {
+                throw new Error("Invalid JSON in the ChatPromptTemplate's promptValues: " + exception)
+            }
         }
         // @ts-ignore
         prompt.promptValues = promptValues

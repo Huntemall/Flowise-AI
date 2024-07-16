@@ -6,6 +6,7 @@ import { TiktokenEncoding } from '@dqbd/tiktoken'
 class TokenTextSplitter_TextSplitters implements INode {
     label: string
     name: string
+    version: number
     description: string
     type: string
     icon: string
@@ -16,6 +17,7 @@ class TokenTextSplitter_TextSplitters implements INode {
     constructor() {
         this.label = 'Token Text Splitter'
         this.name = 'tokenTextSplitter'
+        this.version = 1.0
         this.type = 'TokenTextSplitter'
         this.icon = 'tiktoken.svg'
         this.category = 'Text Splitters'
@@ -54,6 +56,7 @@ class TokenTextSplitter_TextSplitters implements INode {
                 label: 'Chunk Size',
                 name: 'chunkSize',
                 type: 'number',
+                description: 'Number of characters in each chunk. Default is 1000.',
                 default: 1000,
                 optional: true
             },
@@ -61,6 +64,8 @@ class TokenTextSplitter_TextSplitters implements INode {
                 label: 'Chunk Overlap',
                 name: 'chunkOverlap',
                 type: 'number',
+                description: 'Number of characters to overlap between chunks. Default is 200.',
+                default: 200,
                 optional: true
             }
         ]

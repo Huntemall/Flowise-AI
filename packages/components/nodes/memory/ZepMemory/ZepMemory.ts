@@ -1,27 +1,44 @@
-import { SystemChatMessage } from 'langchain/schema'
-import { INode, INodeData, INodeParams } from '../../../src/Interface'
-import { getBaseClasses } from '../../../src/utils'
-import { ZepMemory, ZepMemoryInput } from 'langchain/memory/zep'
-import { ICommonObject } from '../../../src'
+import { ZepMemory, ZepMemoryInput } from '@langchain/community/memory/zep'
+import { BaseMessage } from '@langchain/core/messages'
+import { InputValues, MemoryVariables, OutputValues } from 'langchain/memory'
+import { IMessage, INode, INodeData, INodeParams, MemoryMethods, MessageType, ICommonObject } from '../../../src/Interface'
+import {
+    convertBaseMessagetoIMessage,
+    getBaseClasses,
+    getCredentialData,
+    getCredentialParam,
+    mapChatMessageToBaseMessage
+} from '../../../src/utils'
 
 class ZepMemory_Memory implements INode {
     label: string
     name: string
+    version: number
     description: string
     type: string
     icon: string
     category: string
     baseClasses: string[]
+    credential: INodeParams
     inputs: INodeParams[]
 
     constructor() {
-        this.label = 'Zep Memory'
+        this.label = 'Zep Memory - Open Source'
         this.name = 'ZepMemory'
+        this.version = 2.0
         this.type = 'ZepMemory'
-        this.icon = 'memory.svg'
+        this.icon = 'zep.svg'
         this.category = 'Memory'
         this.description = 'Summarizes the conversation and stores the memory in zep server'
         this.baseClasses = [this.type, ...getBaseClasses(ZepMemory)]
+        this.credential = {
+            label: 'Connect Credential',
+            name: 'credential',
+            type: 'credential',
+            optional: true,
+            description: 'Configure JWT authentication on your Zep instance (Optional)',
+            credentialNames: ['zepMemoryApi']
+        }
         this.inputs = [
             {
                 label: 'Base URL',
@@ -30,24 +47,21 @@ class ZepMemory_Memory implements INode {
                 default: 'http://127.0.0.1:8000'
             },
             {
-                label: 'Auto Summary',
-                name: 'autoSummary',
-                type: 'boolean',
-                default: true
-            },
-            {
                 label: 'Session Id',
                 name: 'sessionId',
                 type: 'string',
-                description: 'if empty, chatId will be used automatically',
+                description:
+                    'If not specified, a random id will be used. Learn <a target="_blank" href="https://docs.flowiseai.com/memory/long-term-memory#ui-and-embedded-chat">more</a>',
                 default: '',
-                additionalParams: true
+                additionalParams: true,
+                optional: true
             },
             {
-                label: 'Auto Summary Template',
-                name: 'autoSummaryTemplate',
-                type: 'string',
-                default: 'This is the summary of the following conversation:\n{summary}',
+                label: 'Size',
+                name: 'k',
+                type: 'number',
+                default: '10',
+                description: 'Window of size k to surface the last k back-and-forth to use as memory.',
                 additionalParams: true
             },
             {
@@ -89,51 +103,97 @@ class ZepMemory_Memory implements INode {
     }
 
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
-        const baseURL = nodeData.inputs?.baseURL as string
-        const aiPrefix = nodeData.inputs?.aiPrefix as string
-        const humanPrefix = nodeData.inputs?.humanPrefix as string
-        const memoryKey = nodeData.inputs?.memoryKey as string
-        const inputKey = nodeData.inputs?.inputKey as string
-        const autoSummaryTemplate = nodeData.inputs?.autoSummaryTemplate as string
-        const autoSummary = nodeData.inputs?.autoSummary as boolean
-        const sessionId = nodeData.inputs?.sessionId as string
+        return await initializeZep(nodeData, options)
+    }
+}
 
-        const chatId = options?.chatId as string
+const initializeZep = async (nodeData: INodeData, options: ICommonObject): Promise<ZepMemory> => {
+    const baseURL = nodeData.inputs?.baseURL as string
+    const aiPrefix = nodeData.inputs?.aiPrefix as string
+    const humanPrefix = nodeData.inputs?.humanPrefix as string
+    const memoryKey = nodeData.inputs?.memoryKey as string
+    const inputKey = nodeData.inputs?.inputKey as string
+    const k = nodeData.inputs?.k as string
+    const sessionId = nodeData.inputs?.sessionId as string
 
-        const obj: ZepMemoryInput = {
-            baseURL,
-            sessionId: sessionId ? sessionId : chatId,
-            aiPrefix,
-            humanPrefix,
-            returnMessages: true,
-            memoryKey,
-            inputKey
+    const credentialData = await getCredentialData(nodeData.credential ?? '', options)
+    const apiKey = getCredentialParam('apiKey', credentialData, nodeData)
+
+    const obj: ZepMemoryInput & ZepMemoryExtendedInput = {
+        baseURL,
+        aiPrefix,
+        humanPrefix,
+        returnMessages: true,
+        memoryKey,
+        inputKey,
+        sessionId,
+        k: k ? parseInt(k, 10) : undefined
+    }
+    if (apiKey) obj.apiKey = apiKey
+
+    return new ZepMemoryExtended(obj)
+}
+
+interface ZepMemoryExtendedInput {
+    k?: number
+}
+
+class ZepMemoryExtended extends ZepMemory implements MemoryMethods {
+    lastN?: number
+
+    constructor(fields: ZepMemoryInput & ZepMemoryExtendedInput) {
+        super(fields)
+        this.lastN = fields.k
+    }
+
+    async loadMemoryVariables(values: InputValues, overrideSessionId = ''): Promise<MemoryVariables> {
+        if (overrideSessionId) {
+            this.sessionId = overrideSessionId
         }
+        return super.loadMemoryVariables({ ...values, lastN: this.lastN })
+    }
 
-        let zep = new ZepMemory(obj)
-
-        // hack to support summary
-        let tmpFunc = zep.loadMemoryVariables
-        zep.loadMemoryVariables = async (values) => {
-            let data = await tmpFunc.bind(zep, values)()
-            if (autoSummary && zep.returnMessages && data[zep.memoryKey] && data[zep.memoryKey].length) {
-                const memory = await zep.zepClient.getMemory(zep.sessionId, 10)
-                if (memory?.summary) {
-                    let summary = autoSummaryTemplate.replace(/{summary}/g, memory.summary.content)
-                    // eslint-disable-next-line no-console
-                    console.log('[ZepMemory] auto summary:', summary)
-                    data[zep.memoryKey].unshift(new SystemChatMessage(summary))
-                }
-            }
-            // for langchain zep memory compatibility, or we will get "Missing value for input variable chat_history"
-            if (data instanceof Array) {
-                data = {
-                    [zep.memoryKey]: data
-                }
-            }
-            return data
+    async saveContext(inputValues: InputValues, outputValues: OutputValues, overrideSessionId = ''): Promise<void> {
+        if (overrideSessionId) {
+            this.sessionId = overrideSessionId
         }
-        return zep
+        return super.saveContext(inputValues, outputValues)
+    }
+
+    async clear(overrideSessionId = ''): Promise<void> {
+        if (overrideSessionId) {
+            this.sessionId = overrideSessionId
+        }
+        return super.clear()
+    }
+
+    async getChatMessages(
+        overrideSessionId = '',
+        returnBaseMessages = false,
+        prependMessages?: IMessage[]
+    ): Promise<IMessage[] | BaseMessage[]> {
+        const id = overrideSessionId ? overrideSessionId : this.sessionId
+        const memoryVariables = await this.loadMemoryVariables({}, id)
+        const baseMessages = memoryVariables[this.memoryKey]
+        if (prependMessages?.length) {
+            baseMessages.unshift(...mapChatMessageToBaseMessage(prependMessages))
+        }
+        return returnBaseMessages ? baseMessages : convertBaseMessagetoIMessage(baseMessages)
+    }
+
+    async addChatMessages(msgArray: { text: string; type: MessageType }[], overrideSessionId = ''): Promise<void> {
+        const id = overrideSessionId ? overrideSessionId : this.sessionId
+        const input = msgArray.find((msg) => msg.type === 'userMessage')
+        const output = msgArray.find((msg) => msg.type === 'apiMessage')
+        const inputValues = { [this.inputKey ?? 'input']: input?.text }
+        const outputValues = { output: output?.text }
+
+        await this.saveContext(inputValues, outputValues, id)
+    }
+
+    async clearChatMessages(overrideSessionId = ''): Promise<void> {
+        const id = overrideSessionId ? overrideSessionId : this.sessionId
+        await this.clear(id)
     }
 }
 
