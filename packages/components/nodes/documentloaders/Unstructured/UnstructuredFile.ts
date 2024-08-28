@@ -6,7 +6,7 @@ import {
     SkipInferTableTypes,
     HiResModelName,
     UnstructuredLoader as LCUnstructuredLoader
-} from 'langchain/document_loaders/fs/unstructured'
+} from '@langchain/community/document_loaders/fs/unstructured'
 import { getCredentialData, getCredentialParam } from '../../../src/utils'
 import { getFileFromStorage } from '../../../src'
 import { UnstructuredLoader } from './Unstructured'
@@ -496,6 +496,7 @@ class UnstructuredFile_DocumentLoaders implements INode {
                 const chatflowid = options.chatflowid
 
                 for (const file of files) {
+                    if (!file) continue
                     const fileData = await getFileFromStorage(file, chatflowid)
                     const loaderDocs = await loader.loadAndSplitBuffer(fileData, file)
                     docs.push(...loaderDocs)
@@ -508,6 +509,7 @@ class UnstructuredFile_DocumentLoaders implements INode {
                 }
 
                 for (const file of files) {
+                    if (!file) continue
                     const splitDataURI = file.split(',')
                     const filename = splitDataURI.pop()?.split(':')[1] ?? ''
                     const bf = Buffer.from(splitDataURI.pop() || '', 'base64')
